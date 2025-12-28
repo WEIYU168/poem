@@ -27,7 +27,6 @@
         .pulse-ring {
             animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
         }
-        /* 分數增加動畫 */
         @keyframes score-pop {
             0% { transform: scale(1); }
             50% { transform: scale(1.5); color: #fbbf24; }
@@ -36,6 +35,26 @@
         .score-change {
             animation: score-pop 0.5s ease-out;
         }
+        @keyframes heart-beat {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-5deg); }
+            75% { transform: rotate(5deg); }
+        }
+        .chest-shake:hover {
+            animation: shake 0.5s infinite;
+        }
+        @keyframes bounce-gentle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .piece-idle {
+            animation: bounce-gentle 2s infinite ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-green-900">
@@ -43,6 +62,21 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
+
+        // --- 數字轉中文對照表 ---
+        const numToChinese = {
+            1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七'
+        };
+
+        // --- 隨機洗牌函數 ---
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
 
         // --- 內建圖示組件 ---
         const IconBase = ({ children, className }) => (
@@ -54,11 +88,14 @@
         const BookOpen = ({ className }) => <IconBase className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></IconBase>;
         const Check = ({ className, size, strokeWidth }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth||2} strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;
         const Lock = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
-        const MapPin = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
+        const MapPin = ({ className, size, strokeWidth }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth||2} strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
         const Star = ({ className }) => <IconBase className={className}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></IconBase>;
         const Trophy = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
         const ArrowRight = ({ className }) => <IconBase className={className}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></IconBase>;
         const RefreshCw = ({ className }) => <IconBase className={className}><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></IconBase>;
+        const Heart = ({ className, fill }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill={fill || "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>;
+        const Gift = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>;
+        const ChessPiece = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 384 512" fill="currentColor" className={className}><path d="M192 0c53 0 96 43 96 96s-43 96-96 96-96-43-96-96S139 0 192 0zM64 224h256c35.3 0 64 28.7 64 64v32c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32v-32c0-35.3 28.7-64 64-64zM0 480c0-17.7 14.3-32 32-32h320c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32z"/></svg>;
 
         // --- 遊戲資料設定 ---
         const GAME_DATA = [
@@ -141,31 +178,25 @@
         // 起點與終點座標
         const START_POS = { x: 10, y: 90 };
         const END_POS = { x: 90, y: 10 };
-
-        // 數字轉中文，用於讀取圖檔 (1 -> 第一關.png)
-        const numToChinese = {
-            1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七'
-        };
-
-        // 隨機洗牌函數 (Fisher-Yates Shuffle)
-        function shuffleArray(array) {
-            const newArray = [...array];
-            for (let i = newArray.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-            }
-            return newArray;
-        }
+        // 寶箱位置 (第四關與第五關中間)
+        const CHEST_POS = { x: 33, y: 41 };
 
         function PoetryGame() {
-          const [gameState, setGameState] = useState('start');
+          const [gameState, setGameState] = useState('start'); // start, map, quiz, win, fail
           const [currentLevelId, setCurrentLevelId] = useState(1);
           const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
           const [unlockedLevel, setUnlockedLevel] = useState(1);
           const [selectedAnswer, setSelectedAnswer] = useState(null);
           const [isCorrect, setIsCorrect] = useState(null);
           const [score, setScore] = useState(0);
+          const [lives, setLives] = useState(5); // 生命值
+          const [chestOpened, setChestOpened] = useState(false); // 寶箱是否已開啟
+          const [showChestModal, setShowChestModal] = useState(false); // 顯示寶箱抽獎視窗
+          const [chestMessage, setChestMessage] = useState(null); // 抽獎結果訊息
           
+          // 棋子位置狀態
+          const [piecePos, setPiecePos] = useState(START_POS);
+
           // 音樂參考
           const audioRef = useRef(null);
 
@@ -187,7 +218,7 @@
             }
           };
 
-          // 音效處理函數 (答題音效)
+          // 音效處理函數 (整合所有音效)
           const playSound = (type) => {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             if (!AudioContext) return;
@@ -198,7 +229,7 @@
             oscillator.connect(gainNode);
             gainNode.connect(ctx.destination);
 
-            if (type === 'correct') {
+            if (type === 'correct') { // 答對: 高音叮
               oscillator.type = 'sine';
               oscillator.frequency.setValueAtTime(600, ctx.currentTime);
               oscillator.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.1);
@@ -206,7 +237,7 @@
               gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
               oscillator.start();
               oscillator.stop(ctx.currentTime + 0.5);
-            } else if (type === 'wrong') {
+            } else if (type === 'wrong') { // 答錯: 低音鋸齒
               oscillator.type = 'sawtooth';
               oscillator.frequency.setValueAtTime(150, ctx.currentTime);
               oscillator.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.3);
@@ -214,6 +245,24 @@
               gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
               oscillator.start();
               oscillator.stop(ctx.currentTime + 0.3);
+            } else if (type === 'cheer') { // 寶箱恭喜: 琶音
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(400, ctx.currentTime);
+                oscillator.frequency.setValueAtTime(500, ctx.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(600, ctx.currentTime + 0.2);
+                oscillator.frequency.setValueAtTime(800, ctx.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + 0.6);
+            } else if (type === 'sigh') { // 寶箱可惜: 下滑音
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(300, ctx.currentTime);
+                oscillator.frequency.linearRampToValueAtTime(200, ctx.currentTime + 0.4);
+                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + 0.4);
             }
           };
 
@@ -241,13 +290,70 @@
             return d;
           };
 
+          // 處理關卡點擊：移動棋子 -> 延遲 -> 進入關卡
           const handleLevelClick = (levelId) => {
+            // 如果該關卡尚未解鎖，則不動作
             if (levelId > unlockedLevel) return;
+            
+            // 1. 移動棋子到該關卡位置
+            const targetLevel = GAME_DATA.find(l => l.id === levelId);
+            setPiecePos(targetLevel.layout);
             setCurrentLevelId(levelId);
-            setCurrentQuestionIdx(0);
-            setGameState('quiz');
-            setSelectedAnswer(null);
-            setIsCorrect(null);
+            
+            // 2. 延遲 1 秒讓動畫播放完畢，再進入答題
+            setTimeout(() => {
+                setCurrentQuestionIdx(0);
+                setGameState('quiz');
+                setSelectedAnswer(null);
+                setIsCorrect(null);
+            }, 1000);
+          };
+
+          // 處理終點點擊
+          const handleEndClick = () => {
+              // 只有當第七關已通過 (unlockedLevel > 7) 才能點擊終點
+              if (unlockedLevel <= 7) return;
+
+              setPiecePos(END_POS);
+              setTimeout(() => {
+                  setGameState('win');
+              }, 1000);
+          };
+
+          const handleChestClick = () => {
+              if (unlockedLevel >= 5 && !chestOpened) {
+                  setShowChestModal(true);
+                  setChestMessage(null);
+              }
+          };
+
+          const openChest = (chestId) => {
+              // 獎勵池: 全滿 (5), +1, +0
+              const outcomes = ['full', 'plus1', 'zero'];
+              const result = outcomes[Math.floor(Math.random() * outcomes.length)];
+              
+              let msg = "";
+              if (result === 'full') {
+                  setLives(5);
+                  msg = "運氣爆棚！血量全滿！";
+                  playSound('cheer');
+              } else if (result === 'plus1') {
+                  setLives(prev => Math.min(prev + 1, 5));
+                  msg = "恭喜！血量 +1";
+                  playSound('cheer');
+              } else {
+                  msg = "哎呀... 寶箱是空的 (+0)";
+                  playSound('sigh');
+              }
+
+              setChestMessage(msg);
+              setChestOpened(true);
+              
+              // 2秒後關閉視窗
+              setTimeout(() => {
+                  setShowChestModal(false);
+                  setChestMessage(null);
+              }, 2500);
           };
 
           const handleAnswerCheck = (option) => {
@@ -266,9 +372,13 @@
                   setSelectedAnswer(null);
                   setIsCorrect(null);
                 } else {
+                  // 本關卡所有題目答對
                   if (currentLevelId === GAME_DATA.length) {
-                    setGameState('win');
+                    // 第七關通過 -> 解鎖終點 (設定 unlockedLevel 為 8)
+                    setUnlockedLevel(8);
+                    setGameState('map');
                   } else {
+                    // 其他關卡通過 -> 解鎖下一關
                     if (currentLevelId === unlockedLevel) {
                       setUnlockedLevel(prev => prev + 1);
                     }
@@ -279,6 +389,13 @@
             } else {
               setIsCorrect(false);
               playSound('wrong');
+              setLives(prevLives => {
+                  const newLives = prevLives - 1;
+                  if (newLives <= 0) {
+                      setTimeout(() => setGameState('fail'), 800);
+                  }
+                  return newLives;
+              });
             }
           };
 
@@ -290,16 +407,17 @@
             setSelectedAnswer(null);
             setIsCorrect(null);
             setScore(0);
+            setLives(5);
+            setChestOpened(false);
+            setShowChestModal(false);
+            setPiecePos(START_POS); // 棋子歸位
           };
 
-          // 取得當前關卡資料
           const currentLevelData = GAME_DATA.find(l => l.id === currentLevelId);
           const currentQuestionData = currentLevelData ? currentLevelData.questions[currentQuestionIdx] : null;
           
-          // 取得該關卡的固定選項順序 (只在切換關卡時重新洗牌)
           const fixedLevelOptions = useMemo(() => {
             if (!currentLevelData) return [];
-            // 取第一題的選項來做隨機排列，之後整關都用這組順序
             return shuffleArray(currentLevelData.questions[0].options);
           }, [currentLevelId]);
 
@@ -318,14 +436,11 @@
                     backgroundColor: '#312e81'
                 }}
               >
-                <div className="absolute inset-0 bg-black/60 pointer-events-none"></div> {/* 加深遮罩 */}
+                <div className="absolute inset-0 bg-black/60 pointer-events-none"></div>
                 <div className="bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl border border-white/20 text-center max-w-lg w-full z-10">
-                  {/* 書寫體標題 */}
                   <h1 className="text-7xl text-yellow-300 mb-4" style={{ fontFamily: "'Dancing Script', cursive" }}>Poems</h1>
-                  
                   <h2 className="text-5xl font-bold mb-2 tracking-wider text-yellow-300 drop-shadow-lg">詩野仙蹤</h2>
                   <p className="text-xl text-gray-200 mb-8 font-light">一場結合新詩與冒險的奇幻旅程</p>
-                  
                   <div className="space-y-4 text-left bg-black/40 p-6 rounded-xl mb-8 border border-white/10">
                     <p className="flex items-start">
                         <MapPin className="mr-3 mt-1 text-pink-400 shrink-0" /> 
@@ -340,7 +455,6 @@
                         <span>答對一題得 1000 分，挑戰最高分！</span>
                     </p>
                   </div>
-
                   <button onClick={startAdventure} className="w-full bg-yellow-400 hover:bg-yellow-300 text-purple-900 font-bold py-4 px-8 rounded-full text-xl transition-all transform hover:scale-105 shadow-lg flex items-center justify-center">
                     開始冒險 <ArrowRight className="ml-2" />
                   </button>
@@ -359,20 +473,17 @@
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                     backgroundRepeat: 'no-repeat',
-                    backgroundColor: '#ca8a04' // fallback yellow-600
+                    backgroundColor: '#ca8a04'
                 }}
               >
-                <div className="absolute inset-0 bg-black/50 pointer-events-none"></div> {/* Overlay for readability */}
-                <div className="relative z-10"> {/* Content wrapper */}
+                <div className="absolute inset-0 bg-black/50 pointer-events-none"></div>
+                <div className="relative z-10">
                     <div className="animate-bounce mb-8">
                       <Trophy className="w-32 h-32 text-yellow-300 drop-shadow-2xl mx-auto" />
                     </div>
                     <h1 className="text-6xl font-bold mb-4 text-yellow-100">恭喜通關！</h1>
                     <p className="text-3xl mb-4 font-bold text-yellow-200">最終得分：{score}</p>
-                    
-                    {/* Added narrative closure text */}
                     <p className="text-2xl mb-4 font-bold text-yellow-100 drop-shadow-md">小弟弟終於在夢境中找到了回家的路，做個香甜的夢。</p>
-                    
                     <p className="text-2xl mb-8 max-w-md mx-auto">你已經通過了所有的新詩考驗，成為了真正的「詩野仙蹤」大師！</p>
                     <button onClick={resetGame} className="bg-white text-red-600 hover:bg-gray-100 font-bold py-3 px-8 rounded-full text-lg transition-colors flex items-center shadow-xl mx-auto">
                       <RefreshCw className="mr-2" /> 重新開始
@@ -382,26 +493,65 @@
             );
           }
 
+          // 2.5 失敗畫面
+          if (gameState === 'fail') {
+            const failImage = `./第${numToChinese[currentLevelId]}關失敗.png`;
+            return (
+              <div 
+                className="min-h-screen flex flex-col items-center justify-center p-4 text-white text-center relative overflow-hidden font-sans"
+                style={{
+                    backgroundColor: '#450a0a'
+                }}
+              >
+                <div className="relative z-10 max-w-4xl w-full flex flex-col items-center">
+                    <div className="w-full max-w-2xl bg-black/20 rounded-2xl overflow-hidden shadow-2xl border-4 border-red-900/50 mb-6">
+                        <img 
+                            src={failImage} 
+                            alt="挑戰失敗" 
+                            className="w-full h-auto object-contain"
+                            style={{ maxHeight: '60vh' }}
+                        />
+                    </div>
+                    
+                    <div className="text-center">
+                        <h1 className="text-5xl font-bold mb-4 text-red-100 drop-shadow-lg">挑戰失敗</h1>
+                        <button onClick={resetGame} className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-full text-lg transition-colors flex items-center shadow-xl mx-auto border-2 border-red-400">
+                            <RefreshCw className="mr-2" /> 重新挑戰
+                        </button>
+                    </div>
+                </div>
+              </div>
+            );
+          }
+
           // 3. 答題畫面
           if (gameState === 'quiz') {
-            const totalQuestions = currentLevelData.questions.length;
-            
             return (
               <div 
                 className="min-h-screen flex items-center justify-center p-4 relative bg-cover bg-center"
                 style={{
-                    // 動態載入各關底圖 (./第一關.png 等)
                     backgroundImage: `url("./第${numToChinese[currentLevelId]}關.png")`,
-                    backgroundColor: '#1e293b' // fallback color
+                    backgroundColor: '#1e293b'
                 }}
               >
-                <div className="absolute inset-0 bg-black/50 pointer-events-none"></div> {/* 遮罩增加文字可讀性 */}
+                <div className="absolute inset-0 bg-black/50 pointer-events-none"></div>
                 
+                <div className="absolute top-4 right-4 z-20 flex flex-col items-end space-y-2">
+                    <div className="bg-indigo-800/80 text-yellow-300 px-4 py-2 rounded-full font-bold border border-indigo-500 flex items-center">
+                        <Star className="mr-2 fill-current" size={18} />
+                        <span>{score}</span>
+                    </div>
+                    <div className="bg-red-900/80 px-4 py-2 rounded-full border border-red-500 flex items-center space-x-1">
+                        {[...Array(5)].map((_, i) => (
+                            <Heart key={i} className={`w-6 h-6 transition-all duration-300 ${i < lives ? 'text-red-500 fill-red-500' : 'text-gray-600 fill-none'}`} />
+                        ))}
+                    </div>
+                </div>
+
                 <div className="max-w-3xl w-full bg-white rounded-3xl shadow-2xl overflow-hidden relative z-10">
                   <div className="bg-indigo-600 p-6 flex justify-between items-center text-white">
                     <div className="flex items-center gap-3">
                        <h2 className="text-2xl font-bold">{currentLevelData.title}</h2>
-                       <span className="bg-indigo-800 text-yellow-300 px-3 py-1 rounded-full text-sm font-bold ml-2 border border-indigo-500">得分: {score}</span>
                     </div>
                     <button onClick={() => setGameState('map')} className="text-indigo-200 hover:text-white transition-colors">
                       返回地圖
@@ -414,7 +564,6 @@
                       </pre>
                     </div>
                     
-                    {/* 使用固定順序的選項 (fixedLevelOptions) */}
                     <div className={`grid gap-4 ${fixedLevelOptions.length > 4 ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
                       {fixedLevelOptions.map((option, idx) => {
                         let btnClass = "p-6 text-2xl rounded-xl border-2 font-bold transition-all transform hover:scale-105 ";
@@ -435,7 +584,7 @@
                     <div className="mt-6 h-8 text-center">
                       {isCorrect === true && (
                         <span className="text-green-600 font-bold text-xl flex items-center justify-center animate-pulse">
-                          <Check className="mr-2" /> {currentQuestionIdx < totalQuestions - 1 ? "答對了！下一題..." : "全數通過！即將前往地圖..."}
+                          <Check className="mr-2" /> {currentQuestionIdx < currentLevelData.questions.length - 1 ? "答對了！下一題..." : "全數通過！即將前往地圖..."}
                         </span>
                       )}
                       {isCorrect === false && <span className="text-red-500 font-bold text-xl animate-bounce">再試一次！細細品味詩句...</span>}
@@ -457,16 +606,21 @@
                   <BookOpen className="mr-3" /> 詩野仙蹤地圖
                 </h1>
                 <p className="text-center text-white font-bold mt-2 drop-shadow-md">點擊發亮的關卡開始挑戰</p>
-                {/* 分數顯示板 */}
-                <div className="absolute top-4 right-4 md:top-8 md:right-8 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold shadow-lg flex items-center border-2 border-yellow-200 z-50">
-                    <Star className="mr-2 fill-current" size={20} />
-                    <span className="text-lg">得分: {score}</span>
+                
+                <div className="absolute top-4 right-4 md:top-8 md:right-8 flex flex-col items-end space-y-2 z-50">
+                    <div className="bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold shadow-lg flex items-center border-2 border-yellow-200">
+                        <Star className="mr-2 fill-current" size={20} />
+                        <span className="text-lg">得分: {score}</span>
+                    </div>
+                    <div className="bg-black/60 px-4 py-2 rounded-full border border-white/30 flex items-center space-x-1 backdrop-blur-sm">
+                        {[...Array(5)].map((_, i) => (
+                            <Heart key={i} className={`w-6 h-6 transition-all duration-300 ${i < lives ? 'text-red-500 fill-red-500 drop-shadow-md' : 'text-gray-500 fill-none opacity-50'}`} />
+                        ))}
+                    </div>
                 </div>
 
                 <div className="flex-1 relative mt-8 rounded-3xl m-4 md:m-8">
-                  {/* SVG 路徑層 - 使用貝茲曲線繪製平滑道路 */}
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    {/* 白色虛線路徑 */}
                     <path 
                       d={getSmoothPath()} 
                       fill="none" 
@@ -482,6 +636,53 @@
                     <div className="bg-green-500 text-white p-2 rounded-full shadow-lg border-2 border-white"><MapPin size={24} /></div>
                     <span className="mt-1 text-white text-xs font-bold bg-black/70 px-2 rounded border border-white/50">起點</span>
                   </div>
+                  
+                  {/* 玩家棋子 (白色) */}
+                  <div 
+                    className="absolute transform -translate-x-1/2 -translate-y-full z-30 transition-all duration-1000 ease-in-out piece-idle"
+                    style={{ left: `${piecePos.x}%`, top: `${piecePos.y}%` }}
+                  >
+                    <div className="relative">
+                        <ChessPiece className="text-white w-12 h-12 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]" />
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-2 bg-black/40 rounded-full blur-sm"></div>
+                    </div>
+                  </div>
+
+                  {/* 寶箱按鈕 */}
+                  <div 
+                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300 ${unlockedLevel >= 5 && !chestOpened ? 'cursor-pointer hover:scale-110 chest-shake' : 'opacity-50 pointer-events-none grayscale'}`}
+                    style={{ left: `${CHEST_POS.x}%`, top: `${CHEST_POS.y}%` }}
+                    onClick={handleChestClick}
+                  >
+                    <div className={`p-3 rounded-full shadow-xl border-4 ${chestOpened ? 'bg-gray-500 border-gray-400' : 'bg-yellow-500 border-yellow-300 animate-bounce'}`}>
+                        <Gift className="text-white w-8 h-8" />
+                    </div>
+                    {!chestOpened && unlockedLevel >= 5 && <span className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-yellow-300 text-yellow-900 text-xs font-bold px-2 py-1 rounded shadow-md whitespace-nowrap">點我抽獎!</span>}
+                  </div>
+
+                  {/* 寶箱抽獎 Modal */}
+                  {showChestModal && (
+                      <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                          <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl animate-bounce-in">
+                              <h3 className="text-3xl font-bold text-indigo-900 mb-6">🎁 幸運寶箱時間！</h3>
+                              {!chestMessage ? (
+                                  <div className="grid grid-cols-3 gap-4">
+                                      {[1, 2, 3].map(i => (
+                                          <button key={i} onClick={() => openChest(i)} className="bg-yellow-100 hover:bg-yellow-200 border-4 border-yellow-400 rounded-xl p-4 flex flex-col items-center transition-all hover:-translate-y-2">
+                                              <Gift className="w-12 h-12 text-yellow-600 mb-2" />
+                                              <span className="font-bold text-yellow-800">寶箱 {i}</span>
+                                          </button>
+                                      ))}
+                                  </div>
+                              ) : (
+                                  <div className="py-8 animate-pulse">
+                                      <p className="text-2xl font-bold text-red-600">{chestMessage}</p>
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  )}
+
                   {GAME_DATA.map((level) => {
                     const isUnlocked = level.id <= unlockedLevel;
                     const isCompleted = level.id < unlockedLevel;
@@ -497,11 +698,19 @@
                       </button>
                     );
                   })}
-                  <div className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10" style={{ left: `${END_POS.x}%`, top: `${END_POS.y}%` }}>
-                     <div className={`p-3 rounded-full shadow-lg border-4 ${unlockedLevel > GAME_DATA.length ? 'bg-yellow-400 border-white animate-bounce' : 'bg-gray-700 border-gray-600'}`}>
-                      <Trophy size={32} className={unlockedLevel > GAME_DATA.length ? 'text-red-600' : 'text-gray-400'} />
+                  
+                  {/* 終點 - 修改為可點擊 */}
+                  <div 
+                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10 transition-all duration-300 ${unlockedLevel >= 8 ? 'cursor-pointer hover:scale-110 animate-bounce' : ''}`}
+                    style={{ left: `${END_POS.x}%`, top: `${END_POS.y}%` }}
+                    onClick={handleEndClick}
+                  >
+                     <div className={`p-3 rounded-full shadow-lg border-4 ${unlockedLevel >= 8 ? 'bg-yellow-400 border-white ring-4 ring-yellow-200' : 'bg-gray-700 border-gray-600'}`}>
+                      <Trophy size={32} className={unlockedLevel >= 8 ? 'text-red-600' : 'text-gray-400'} />
                     </div>
-                    <span className="mt-2 text-yellow-300 font-bold text-sm bg-black/70 px-2 rounded border border-yellow-500/50">終點</span>
+                    <span className="mt-2 text-yellow-300 font-bold text-sm bg-black/70 px-2 rounded border border-yellow-500/50">
+                        {unlockedLevel >= 8 ? "點擊通關!" : "終點"}
+                    </span>
                   </div>
                 </div>
               </div>
