@@ -45,9 +45,11 @@
             25% { transform: rotate(-5deg); }
             75% { transform: rotate(5deg); }
         }
-        .chest-shake:hover {
+        /* 移除 hover 的 shake 動畫，僅保留定義供其他用途 */
+        .chest-shake-anim {
             animation: shake 0.5s infinite;
         }
+        
         @keyframes bounce-gentle {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-10px); }
@@ -55,13 +57,21 @@
         .piece-idle {
             animation: bounce-gentle 2s infinite ease-in-out;
         }
+        /* 氣球浮動動畫 */
+        @keyframes balloon-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        .balloon {
+            animation: balloon-float 3s ease-in-out infinite;
+        }
     </style>
 </head>
 <body class="bg-green-900">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
         // --- 數字轉中文對照表 ---
         const numToChinese = {
@@ -77,6 +87,102 @@
             }
             return newArray;
         }
+
+        // --- 煙火組件 (接收 onLaunch callback 以播放音效) ---
+        const Fireworks = ({ onLaunch }) => {
+            const canvasRef = useRef(null);
+            
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                let width = window.innerWidth;
+                let height = window.innerHeight;
+                canvas.width = width;
+                canvas.height = height;
+                
+                let particles = [];
+                
+                const createFirework = (x, y) => {
+                    if (onLaunch) onLaunch(); // 觸發發射音效
+                    
+                    const particleCount = 80;
+                    const hue = Math.random() * 360;
+                    for (let i = 0; i < particleCount; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = Math.random() * 5 + 2;
+                        particles.push({
+                            x, y,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            life: 100,
+                            alpha: 1,
+                            color: `hsla(${hue}, 100%, 50%,`,
+                            decay: Math.random() * 0.015 + 0.01
+                        });
+                    }
+                };
+
+                // 隨機發射煙火
+                const launchInterval = setInterval(() => {
+                    createFirework(
+                        Math.random() * width * 0.8 + width * 0.1, 
+                        Math.random() * height * 0.6 + height * 0.1
+                    );
+                }, 800); // 稍微調慢頻率避免音效太吵
+                
+                // 初始一發
+                createFirework(width / 2, height / 2);
+
+                const animate = () => {
+                    // 拖尾效果
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.globalCompositeOperation = 'lighter';
+                    
+                    for (let i = particles.length - 1; i >= 0; i--) {
+                        const p = particles[i];
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        p.vy += 0.05; // 重力
+                        p.vx *= 0.98; // 阻力
+                        p.vy *= 0.98;
+                        p.alpha -= p.decay;
+                        
+                        if (p.alpha <= 0) {
+                            particles.splice(i, 1);
+                        } else {
+                            ctx.fillStyle = p.color + p.alpha + ')';
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                    
+                    if (particles.length > 0 || launchInterval) {
+                        requestAnimationFrame(animate);
+                    }
+                };
+                
+                const animId = requestAnimationFrame(animate);
+                
+                const handleResize = () => {
+                    width = window.innerWidth;
+                    height = window.innerHeight;
+                    canvas.width = width;
+                    canvas.height = height;
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    cancelAnimationFrame(animId);
+                    clearInterval(launchInterval);
+                    window.removeEventListener('resize', handleResize);
+                };
+            }, [onLaunch]);
+
+            return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" />;
+        };
 
         // --- 內建圖示組件 ---
         const IconBase = ({ children, className }) => (
@@ -96,6 +202,15 @@
         const Heart = ({ className, fill }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill={fill || "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>;
         const Gift = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>;
         const ChessPiece = ({ className, size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 384 512" fill="currentColor" className={className}><path d="M192 0c53 0 96 43 96 96s-43 96-96 96-96-43-96-96S139 0 192 0zM64 224h256c35.3 0 64 28.7 64 64v32c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32v-32c0-35.3 28.7-64 64-64zM0 480c0-17.7 14.3-32 32-32h320c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32z"/></svg>;
+        
+        // 彈弓圖示 (Y字形) - 用於地圖按鈕
+        const SlingshotIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="M12 20v-8l-6-6" />
+                <path d="M12 12l6-6" />
+                <path d="M7 6h10" strokeDasharray="2 2" stroke="gray"/> {/* 橡皮筋示意 */}
+            </svg>
+        );
 
         // --- 遊戲資料設定 ---
         const GAME_DATA = [
@@ -178,8 +293,12 @@
         // 起點與終點座標
         const START_POS = { x: 10, y: 90 };
         const END_POS = { x: 90, y: 10 };
-        // 寶箱位置 (第四關與第五關中間)
-        const CHEST_POS = { x: 33, y: 41 };
+        
+        // 寶箱位置調整
+        // 寶箱1：第三關(87,53) 和 第四關(56,44) 之間
+        const CHEST1_POS = { x: 72, y: 49 };
+        // 寶箱2：第五關(10,38) 和 第六關(10,-5) 之間，路徑中間
+        const CHEST2_POS = { x: 10, y: 16 };
 
         function PoetryGame() {
           const [gameState, setGameState] = useState('start'); // start, map, quiz, win, fail
@@ -190,10 +309,26 @@
           const [isCorrect, setIsCorrect] = useState(null);
           const [score, setScore] = useState(0);
           const [lives, setLives] = useState(5); // 生命值
-          const [chestOpened, setChestOpened] = useState(false); // 寶箱是否已開啟
-          const [showChestModal, setShowChestModal] = useState(false); // 顯示寶箱抽獎視窗
-          const [chestMessage, setChestMessage] = useState(null); // 抽獎結果訊息
           
+          // 寶箱狀態
+          const [chestsOpened, setChestsOpened] = useState({ 1: false, 2: false });
+          const [showChestModal, setShowChestModal] = useState(false);
+          const [activeChestId, setActiveChestId] = useState(null);
+          const [chestMessage, setChestMessage] = useState(null);
+          
+          // 射氣球小遊戲狀態
+          const [balloonState, setBalloonState] = useState({
+            phase: 'idle', // idle, aiming, pulling, flying, end
+            shotsLeft: 4,
+            hits: 0,
+            balloons: [true, true, true], // true表示氣球還在
+            angle: 0, // -45 to 45
+            projPos: { x: 50, y: 90 }, // 投射物位置 %
+            projVec: { x: 0, y: 0 },
+            aimDir: 1, // 1 or -1 for animation
+          });
+          const balloonAnimRef = useRef(null);
+
           // 棋子位置狀態
           const [piecePos, setPiecePos] = useState(START_POS);
 
@@ -218,7 +353,7 @@
             }
           };
 
-          // 音效處理函數 (整合所有音效)
+          // 音效處理函數
           const playSound = (type) => {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             if (!AudioContext) return;
@@ -263,6 +398,30 @@
                 gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
                 oscillator.start();
                 oscillator.stop(ctx.currentTime + 0.4);
+            } else if (type === 'pop') { // 氣球破裂
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(200, ctx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + 0.1);
+            } else if (type === 'shoot') { // 發射
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(400, ctx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + 0.3);
+            } else if (type === 'firework') { // 煙火爆炸聲
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(100, ctx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+                gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + 0.5);
             }
           };
 
@@ -290,17 +449,11 @@
             return d;
           };
 
-          // 處理關卡點擊：移動棋子 -> 延遲 -> 進入關卡
           const handleLevelClick = (levelId) => {
-            // 如果該關卡尚未解鎖，則不動作
             if (levelId > unlockedLevel) return;
-            
-            // 1. 移動棋子到該關卡位置
             const targetLevel = GAME_DATA.find(l => l.id === levelId);
             setPiecePos(targetLevel.layout);
             setCurrentLevelId(levelId);
-            
-            // 2. 延遲 1 秒讓動畫播放完畢，再進入答題
             setTimeout(() => {
                 setCurrentQuestionIdx(0);
                 setGameState('quiz');
@@ -309,37 +462,58 @@
             }, 1000);
           };
 
-          // 處理終點點擊
           const handleEndClick = () => {
-              // 只有當第七關已通過 (unlockedLevel > 7) 才能點擊終點
               if (unlockedLevel <= 7) return;
-
               setPiecePos(END_POS);
               setTimeout(() => {
                   setGameState('win');
               }, 1000);
           };
 
-          const handleChestClick = () => {
-              if (unlockedLevel >= 5 && !chestOpened) {
+          // 寶箱點擊處理
+          const handleChestClick = (chestId) => {
+              // 寶箱1：第3關後開啟
+              if (chestId === 1 && unlockedLevel >= 4 && !chestsOpened[1]) {
+                  setActiveChestId(1);
                   setShowChestModal(true);
                   setChestMessage(null);
               }
+              // 寶箱2：第5關後開啟 (unlockedLevel >= 6，即已通過 Level 5)
+              else if (chestId === 2 && unlockedLevel >= 6 && !chestsOpened[2]) {
+                  setActiveChestId(2);
+                  setShowChestModal(true);
+                  setChestMessage(null);
+                  // 初始化氣球遊戲
+                  setBalloonState({
+                    phase: 'aiming',
+                    shotsLeft: 4,
+                    hits: 0,
+                    balloons: [true, true, true],
+                    angle: 0, // 0 now means straight up
+                    projPos: { x: 50, y: 90 },
+                    projVec: { x: 0, y: 0 },
+                    aimDir: 1,
+                  });
+              }
           };
 
-          const openChest = (chestId) => {
-              // 獎勵池: 全滿 (5), +1, +0
-              const outcomes = ['full', 'plus1', 'zero'];
-              const result = outcomes[Math.floor(Math.random() * outcomes.length)];
+          // 寶箱1 邏輯：隨機抽獎 (提高機率)
+          const openChest1 = (chestIdx) => {
+              // 40% +2, 40% +1, 20% +0
+              const rand = Math.random();
               
               let msg = "";
-              if (result === 'full') {
-                  setLives(5);
-                  msg = "運氣爆棚！血量全滿！";
+              if (rand < 0.4) {
+                  // +2 獲得 2000 分
+                  setLives(prev => Math.min(prev + 2, 5));
+                  setScore(prev => prev + 2000);
+                  msg = "超級幸運！獲得 +2 命，積分 +2000！";
                   playSound('cheer');
-              } else if (result === 'plus1') {
+              } else if (rand < 0.8) {
+                  // +1 獲得 1000 分
                   setLives(prev => Math.min(prev + 1, 5));
-                  msg = "恭喜！血量 +1";
+                  setScore(prev => prev + 1000);
+                  msg = "運氣不錯！獲得 +1 命，積分 +1000！";
                   playSound('cheer');
               } else {
                   msg = "哎呀... 寶箱是空的 (+0)";
@@ -347,13 +521,158 @@
               }
 
               setChestMessage(msg);
-              setChestOpened(true);
+              setChestsOpened(prev => ({ ...prev, 1: true }));
               
-              // 2秒後關閉視窗
               setTimeout(() => {
                   setShowChestModal(false);
                   setChestMessage(null);
               }, 2500);
+          };
+
+          // --- 射氣球小遊戲邏輯 ---
+          const BALLOON_POSITIONS = [
+            { x: 25, y: 20, r: 8 },
+            { x: 50, y: 20, r: 8 },
+            { x: 75, y: 20, r: 8 }
+          ];
+
+          useEffect(() => {
+            if (!showChestModal || activeChestId !== 2) {
+                if (balloonAnimRef.current) cancelAnimationFrame(balloonAnimRef.current);
+                return;
+            }
+
+            const loop = () => {
+                setBalloonState(prev => {
+                    let next = { ...prev };
+
+                    // 1. 瞄準階段 (自動擺動角度)
+                    if (prev.phase === 'aiming') {
+                        // 降低擺動速度，增加命中機率
+                        let newAngle = prev.angle + prev.aimDir * 1.0; 
+                        if (newAngle > 45) { newAngle = 45; next.aimDir = -1; }
+                        if (newAngle < -45) { newAngle = -45; next.aimDir = 1; }
+                        next.angle = newAngle;
+                    } 
+                    // 2. 拉弓階段 (暫停瞄準，等待發射)
+                    else if (prev.phase === 'pulling') {
+                        // 保持角度不變
+                    }
+                    // 3. 飛行階段 (直線)
+                    else if (prev.phase === 'flying') {
+                        // 直線飛行，無重力
+                        const newX = prev.projPos.x + prev.projVec.x;
+                        const newY = prev.projPos.y + prev.projVec.y;
+
+                        next.projPos = { x: newX, y: newY };
+                        // 向量保持不變
+
+                        // 邊界檢查
+                        if (newX < 0 || newX > 100 || newY < 0 || newY > 100) {
+                            next.phase = next.shotsLeft > 1 ? 'aiming' : 'end';
+                            next.shotsLeft = prev.shotsLeft - 1;
+                            next.projPos = { x: 50, y: 90 }; 
+                            if (next.phase === 'end') {
+                                calculateBalloonReward(next.hits);
+                            }
+                        } else {
+                            // 碰撞檢查
+                            for (let i = 0; i < 3; i++) {
+                                if (prev.balloons[i]) {
+                                    const bx = BALLOON_POSITIONS[i].x;
+                                    const by = BALLOON_POSITIONS[i].y;
+                                    const dist = Math.sqrt(Math.pow(newX - bx, 2) + Math.pow(newY - by, 2));
+                                    // 增加判定半徑 (8 -> 12)，提升命中率
+                                    if (dist < 12) {
+                                        next.balloons = [...prev.balloons];
+                                        next.balloons[i] = false;
+                                        next.hits = prev.hits + 1;
+                                        playSound('pop');
+                                        
+                                        next.phase = next.shotsLeft > 1 ? 'aiming' : 'end';
+                                        next.shotsLeft = prev.shotsLeft - 1;
+                                        next.projPos = { x: 50, y: 90 };
+
+                                        if (next.phase === 'end') {
+                                            calculateBalloonReward(next.hits);
+                                        }
+                                        break; 
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return next;
+                });
+                balloonAnimRef.current = requestAnimationFrame(loop);
+            };
+            
+            balloonAnimRef.current = requestAnimationFrame(loop);
+            return () => cancelAnimationFrame(balloonAnimRef.current);
+          }, [showChestModal, activeChestId]);
+
+          // 計算氣球獎勵 (每中一顆 +2000分)
+          const calculateBalloonReward = (hits) => {
+              const scoreGain = hits * 2000;
+              let msg = "";
+              
+              if (hits > 0) {
+                  msg = `神射手！射中 ${hits} 顆，積分 +${scoreGain}！`;
+                  playSound('cheer');
+              } else {
+                  msg = "哎呀... 全都沒中！";
+                  playSound('sigh');
+              }
+
+              setScore(prev => prev + scoreGain);
+              setChestMessage(msg);
+              setChestsOpened(prev => ({ ...prev, 2: true }));
+
+              setTimeout(() => {
+                  setShowChestModal(false);
+                  setChestMessage(null);
+              }, 3000);
+          };
+
+          // 玩家操作：按下開始拉弓 (鎖定角度)
+          const handleMouseDown = () => {
+              setBalloonState(prev => {
+                  if (prev.phase === 'aiming') {
+                      return { ...prev, phase: 'pulling' };
+                  }
+                  return prev;
+              });
+          };
+
+          // 玩家操作：放開滑鼠發射
+          const handleMouseUp = () => {
+             setBalloonState(prev => {
+                  if (prev.phase === 'pulling') {
+                      // 計算發射向量 (angle 0 is up)
+                      const rad = (prev.angle - 90) * (Math.PI / 180); 
+                      // 向上為負y，固定高速
+                      const speed = 4.0; // 高速直線
+                      const vx = Math.cos(rad) * speed;
+                      const vy = Math.sin(rad) * speed;
+                      
+                      // 計算起始位置 (讓石頭從彈弓皮兜處射出)
+                      const angleRad = prev.angle * (Math.PI / 180);
+                      const r = 20; 
+                      const startX = 50 + Math.sin(angleRad) * r;
+                      const startY = 88 - Math.cos(angleRad) * r;
+
+                      playSound('shoot');
+
+                      return { 
+                          ...prev, 
+                          phase: 'flying',
+                          projPos: { x: startX, y: startY },
+                          projVec: { x: vx, y: vy }
+                      };
+                  }
+                  return prev;
+              });
           };
 
           const handleAnswerCheck = (option) => {
@@ -372,13 +691,10 @@
                   setSelectedAnswer(null);
                   setIsCorrect(null);
                 } else {
-                  // 本關卡所有題目答對
                   if (currentLevelId === GAME_DATA.length) {
-                    // 第七關通過 -> 解鎖終點 (設定 unlockedLevel 為 8)
                     setUnlockedLevel(8);
                     setGameState('map');
                   } else {
-                    // 其他關卡通過 -> 解鎖下一關
                     if (currentLevelId === unlockedLevel) {
                       setUnlockedLevel(prev => prev + 1);
                     }
@@ -389,6 +705,8 @@
             } else {
               setIsCorrect(false);
               playSound('wrong');
+              // 答錯扣 500 分，最低 0 分
+              setScore(prev => Math.max(0, prev - 500));
               setLives(prevLives => {
                   const newLives = prevLives - 1;
                   if (newLives <= 0) {
@@ -408,9 +726,9 @@
             setIsCorrect(null);
             setScore(0);
             setLives(5);
-            setChestOpened(false);
+            setChestsOpened({ 1: false, 2: false });
             setShowChestModal(false);
-            setPiecePos(START_POS); // 棋子歸位
+            setPiecePos(START_POS);
           };
 
           const currentLevelData = GAME_DATA.find(l => l.id === currentLevelId);
@@ -452,7 +770,7 @@
                     </p>
                     <p className="flex items-center">
                         <Star className="mr-3 text-yellow-400 shrink-0" /> 
-                        <span>答對一題得 1000 分，挑戰最高分！</span>
+                        <span>答對一題得 1000 分，答錯扣 500 分，挑戰最高分！</span>
                     </p>
                   </div>
                   <button onClick={startAdventure} className="w-full bg-yellow-400 hover:bg-yellow-300 text-purple-900 font-bold py-4 px-8 rounded-full text-xl transition-all transform hover:scale-105 shadow-lg flex items-center justify-center">
@@ -463,7 +781,7 @@
             );
           }
 
-          // 2. 勝利畫面
+          // 2. 勝利畫面 (只在這裡顯示煙火)
           if (gameState === 'win') {
             return (
               <div 
@@ -476,6 +794,7 @@
                     backgroundColor: '#ca8a04'
                 }}
               >
+                <Fireworks onLaunch={() => playSound('firework')} />
                 <div className="absolute inset-0 bg-black/50 pointer-events-none"></div>
                 <div className="relative z-10">
                     <div className="animate-bounce mb-8">
@@ -485,9 +804,11 @@
                     <p className="text-3xl mb-4 font-bold text-yellow-200">最終得分：{score}</p>
                     <p className="text-2xl mb-4 font-bold text-yellow-100 drop-shadow-md">小弟弟終於在夢境中找到了回家的路，做個香甜的夢。</p>
                     <p className="text-2xl mb-8 max-w-md mx-auto">你已經通過了所有的新詩考驗，成為了真正的「詩野仙蹤」大師！</p>
-                    <button onClick={resetGame} className="bg-white text-red-600 hover:bg-gray-100 font-bold py-3 px-8 rounded-full text-lg transition-colors flex items-center shadow-xl mx-auto">
+                    <button onClick={resetGame} className="bg-white text-red-600 hover:bg-gray-100 font-bold py-3 px-8 rounded-full text-lg transition-colors flex items-center shadow-xl mx-auto relative z-20">
                       <RefreshCw className="mr-2" /> 重新開始
                     </button>
+                    {/* 新增的製作團隊文字 */}
+                    <div className="mt-8 text-yellow-200 font-bold text-xl tracking-widest bg-black/30 py-2 px-6 rounded-full inline-block">林威宇老師X南一書局製作</div>
                 </div>
               </div>
             );
@@ -504,7 +825,7 @@
                 }}
               >
                 <div className="relative z-10 max-w-4xl w-full flex flex-col items-center">
-                    <div className="w-full max-w-2xl bg-black/20 rounded-2xl overflow-hidden shadow-2xl border-4 border-red-900/50 mb-6">
+                    <div className="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl border-4 border-red-900/50 mb-6">
                         <img 
                             src={failImage} 
                             alt="挑戰失敗" 
@@ -551,14 +872,17 @@
                 <div className="max-w-3xl w-full bg-white rounded-3xl shadow-2xl overflow-hidden relative z-10">
                   <div className="bg-indigo-600 p-6 flex justify-between items-center text-white">
                     <div className="flex items-center gap-3">
-                       <h2 className="text-2xl font-bold">{currentLevelData.title}</h2>
+                       <h2 className="text-2xl font-bold">
+                           <span className="block text-sm opacity-80">第{numToChinese[currentLevelId]}關</span>
+                           <span className="block">{currentLevelData.title.split('：')[1]}</span>
+                       </h2>
                     </div>
                     <button onClick={() => setGameState('map')} className="text-indigo-200 hover:text-white transition-colors">
                       返回地圖
                     </button>
                   </div>
                   <div className="p-8">
-                    <div className="bg-amber-50 border-2 border-amber-200 p-8 rounded-xl mb-8 shadow-inner transform rotate-1 min-h-[200px] flex items-center justify-center">
+                    <div className="bg-amber-50 border-2 border-amber-200 p-8 rounded-xl mb-8 shadow-inner min-h-[200px] flex items-center justify-center">
                       <pre className="font-serif text-2xl text-gray-800 leading-loose text-center whitespace-pre-wrap font-medium">
                         {currentQuestionData.poem}
                       </pre>
@@ -587,7 +911,7 @@
                           <Check className="mr-2" /> {currentQuestionIdx < currentLevelData.questions.length - 1 ? "答對了！下一題..." : "全數通過！即將前往地圖..."}
                         </span>
                       )}
-                      {isCorrect === false && <span className="text-red-500 font-bold text-xl animate-bounce">再試一次！細細品味詩句...</span>}
+                      {isCorrect === false && <span className="text-red-500 font-bold text-xl animate-bounce">再試一次！扣 500 分...</span>}
                     </div>
                   </div>
                 </div>
@@ -637,7 +961,7 @@
                     <span className="mt-1 text-white text-xs font-bold bg-black/70 px-2 rounded border border-white/50">起點</span>
                   </div>
                   
-                  {/* 玩家棋子 (白色) */}
+                  {/* 玩家棋子 */}
                   <div 
                     className="absolute transform -translate-x-1/2 -translate-y-full z-30 transition-all duration-1000 ease-in-out piece-idle"
                     style={{ left: `${piecePos.x}%`, top: `${piecePos.y}%` }}
@@ -648,35 +972,134 @@
                     </div>
                   </div>
 
-                  {/* 寶箱按鈕 */}
+                  {/* 寶箱 1 (幸運抽獎) - 移除 chest-shake */}
                   <div 
-                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300 ${unlockedLevel >= 5 && !chestOpened ? 'cursor-pointer hover:scale-110 chest-shake' : 'opacity-50 pointer-events-none grayscale'}`}
-                    style={{ left: `${CHEST_POS.x}%`, top: `${CHEST_POS.y}%` }}
-                    onClick={handleChestClick}
+                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300 ${unlockedLevel >= 4 && !chestsOpened[1] ? 'cursor-pointer hover:scale-110' : 'opacity-50 pointer-events-none grayscale'}`}
+                    style={{ left: `${CHEST1_POS.x}%`, top: `${CHEST1_POS.y}%` }}
+                    onClick={() => handleChestClick(1)}
                   >
-                    <div className={`p-3 rounded-full shadow-xl border-4 ${chestOpened ? 'bg-gray-500 border-gray-400' : 'bg-yellow-500 border-yellow-300 animate-bounce'}`}>
+                    <div className={`p-3 rounded-full shadow-xl border-4 ${chestsOpened[1] ? 'bg-gray-500 border-gray-400' : 'bg-yellow-500 border-yellow-300 animate-bounce'}`}>
                         <Gift className="text-white w-8 h-8" />
                     </div>
-                    {!chestOpened && unlockedLevel >= 5 && <span className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-yellow-300 text-yellow-900 text-xs font-bold px-2 py-1 rounded shadow-md whitespace-nowrap">點我抽獎!</span>}
+                    {!chestsOpened[1] && unlockedLevel >= 4 && <span className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-yellow-300 text-yellow-900 text-xs font-bold px-2 py-1 rounded shadow-md whitespace-nowrap">好運寶箱</span>}
                   </div>
 
-                  {/* 寶箱抽獎 Modal */}
+                  {/* 寶箱 2 (射氣球) - 移除 chest-shake */}
+                  <div 
+                    className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300 ${unlockedLevel >= 6 && !chestsOpened[2] ? 'cursor-pointer hover:scale-110' : 'opacity-50 pointer-events-none grayscale'}`}
+                    style={{ left: `${CHEST2_POS.x}%`, top: `${CHEST2_POS.y}%` }}
+                    onClick={() => handleChestClick(2)}
+                  >
+                    <div className={`p-3 rounded-full shadow-xl border-4 ${chestsOpened[2] ? 'bg-gray-500 border-gray-400' : 'bg-red-500 border-red-300 animate-bounce'}`}>
+                        <SlingshotIcon className="text-white w-8 h-8" />
+                    </div>
+                    {!chestsOpened[2] && unlockedLevel >= 6 && <span className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-red-300 text-red-900 text-xs font-bold px-2 py-1 rounded shadow-md whitespace-nowrap">射氣球!</span>}
+                  </div>
+
+                  {/* 通用寶箱/小遊戲 Modal */}
                   {showChestModal && (
                       <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                          <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl animate-bounce-in">
-                              <h3 className="text-3xl font-bold text-indigo-900 mb-6">🎁 幸運寶箱時間！</h3>
-                              {!chestMessage ? (
-                                  <div className="grid grid-cols-3 gap-4">
-                                      {[1, 2, 3].map(i => (
-                                          <button key={i} onClick={() => openChest(i)} className="bg-yellow-100 hover:bg-yellow-200 border-4 border-yellow-400 rounded-xl p-4 flex flex-col items-center transition-all hover:-translate-y-2">
-                                              <Gift className="w-12 h-12 text-yellow-600 mb-2" />
-                                              <span className="font-bold text-yellow-800">寶箱 {i}</span>
-                                          </button>
-                                      ))}
+                          <div className="bg-white rounded-3xl p-6 max-w-lg w-full text-center shadow-2xl animate-bounce-in relative overflow-hidden">
+                              {/* 寶箱 1：抽獎介面 */}
+                              {activeChestId === 1 && (
+                                  <div>
+                                      <h3 className="text-3xl font-bold text-indigo-900 mb-6">🎁 幸運寶箱時間！</h3>
+                                      {!chestMessage ? (
+                                          <div className="grid grid-cols-3 gap-4">
+                                              {[1, 2, 3].map(i => (
+                                                  <button key={i} onClick={() => openChest1(i)} className="bg-yellow-100 hover:bg-yellow-200 border-4 border-yellow-400 rounded-xl p-4 flex flex-col items-center transition-all hover:-translate-y-2">
+                                                      <Gift className="w-12 h-12 text-yellow-600 mb-2" />
+                                                      <span className="font-bold text-yellow-800">寶箱 {i}</span>
+                                                  </button>
+                                              ))}
+                                          </div>
+                                      ) : (
+                                          <div className="py-8 animate-pulse">
+                                              <p className="text-2xl font-bold text-red-600">{chestMessage}</p>
+                                          </div>
+                                      )}
                                   </div>
-                              ) : (
-                                  <div className="py-8 animate-pulse">
-                                      <p className="text-2xl font-bold text-red-600">{chestMessage}</p>
+                              )}
+
+                              {/* 寶箱 2：射氣球小遊戲介面 */}
+                              {activeChestId === 2 && (
+                                  <div className="relative h-96 w-full bg-sky-100 rounded-xl border-4 border-sky-300 overflow-hidden select-none"
+                                       onMouseDown={handleMouseDown}
+                                       onTouchStart={handleMouseDown}
+                                       onMouseUp={handleMouseUp}
+                                       onTouchEnd={handleMouseUp}
+                                       onMouseLeave={handleMouseUp} // 滑鼠移出也視為放開
+                                  >
+                                      {/* 背景雲朵 */}
+                                      <div className="absolute top-10 left-10 text-white/50"><svg width="60" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
+                                      <div className="absolute top-20 right-10 text-white/50"><svg width="40" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
+
+                                      {/* 結算訊息 */}
+                                      {chestMessage && (
+                                          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 text-white text-2xl font-bold rounded-xl">
+                                              {chestMessage}
+                                          </div>
+                                      )}
+
+                                      {/* 提示文字 */}
+                                      {!chestMessage && balloonState.phase === 'aiming' && (
+                                        <div className="absolute top-4 left-0 right-0 text-center text-sky-700 font-bold text-lg animate-pulse pointer-events-none z-50 bg-white/30 backdrop-blur-sm py-1">
+                                            瞄準氣球：按下鎖定並拉弓，放開射出！
+                                        </div>
+                                      )}
+                                      {!chestMessage && balloonState.phase === 'pulling' && (
+                                        <div className="absolute top-4 left-0 right-0 text-center text-red-600 font-bold text-lg animate-pulse pointer-events-none z-50 bg-white/30 backdrop-blur-sm py-1">
+                                            放開滑鼠發射！
+                                        </div>
+                                      )}
+                                      
+                                      {/* 氣球 */}
+                                      {BALLOON_POSITIONS.map((pos, i) => (
+                                          balloonState.balloons[i] && (
+                                            <div key={i} className="absolute balloon" style={{ 
+                                                left: `${pos.x}%`, top: `${pos.y}%`, 
+                                                transform: 'translate(-50%, -50%)',
+                                                animationDelay: `${i * 0.5}s`
+                                            }}>
+                                                <div className="w-12 h-14 bg-red-500 rounded-full shadow-inner relative flex items-center justify-center">
+                                                    <div className="absolute top-2 right-3 w-3 h-3 bg-white/40 rounded-full"></div>
+                                                    <div className="absolute bottom-0 w-1 h-8 bg-gray-400 translate-y-full"></div>
+                                                </div>
+                                            </div>
+                                          )
+                                      ))}
+
+                                      {/* 發射物 (石頭) */}
+                                      {balloonState.phase === 'flying' && (
+                                          <div className="absolute z-10 w-6 h-6 bg-gray-600 rounded-full shadow-sm"
+                                               style={{ left: `${balloonState.projPos.x}%`, top: `${balloonState.projPos.y}%`, transform: 'translate(-50%, -50%)' }}>
+                                          </div>
+                                      )}
+
+                                      {/* 玩家/發射台 */}
+                                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+                                          {/* 彈弓組件 */}
+                                          <div className={`relative z-20 mb-4 transition-transform`}
+                                               style={{ transform: `rotate(${balloonState.angle}deg)`, transformOrigin: 'bottom center' }}
+                                          >
+                                              <svg width="100" height="100" viewBox="0 0 100 100" className="overflow-visible">
+                                                  {/* 橡皮筋 (後段) */}
+                                                  {/* 如果在拉弓(pulling)狀態，橡皮筋拉長到 y=45，否則在 y=20 */}
+                                                  <line x1="30" y1="20" x2="50" y2={balloonState.phase === 'pulling' ? 45 : 20} stroke="#eab308" strokeWidth="4" />
+                                                  <line x1="70" y1="20" x2="50" y2={balloonState.phase === 'pulling' ? 45 : 20} stroke="#eab308" strokeWidth="4" />
+
+                                                  {/* 投射物 (在皮兜中) - 僅在未飛行時顯示 */}
+                                                  {balloonState.phase !== 'flying' && (
+                                                      <circle cx="50" cy={balloonState.phase === 'pulling' ? 45 : 20} r="8" fill="#4b5563" />
+                                                  )}
+
+                                                  {/* 彈弓手柄 (Y字形) */}
+                                                  <path d="M50 100 L50 60 L30 20 M50 60 L70 20" stroke="#78350f" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                                              </svg>
+                                          </div>
+
+                                          <div className="mb-2 mt-2 font-bold text-indigo-800 bg-white/50 px-3 py-1 rounded-full">剩餘次數: {balloonState.shotsLeft}</div>
+                                      </div>
                                   </div>
                               )}
                           </div>
@@ -687,13 +1110,17 @@
                     const isUnlocked = level.id <= unlockedLevel;
                     const isCompleted = level.id < unlockedLevel;
                     const isCurrent = level.id === unlockedLevel;
+                    const titleParts = level.title.split('：');
                     return (
                       <button key={level.id} onClick={() => handleLevelClick(level.id)} disabled={!isUnlocked} className={`absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300 group ${isCurrent ? 'scale-110 z-20 hover:scale-125' : 'scale-100 z-10 hover:scale-110'}`} style={{ left: `${level.layout.x}%`, top: `${level.layout.y}%` }}>
                         <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center shadow-xl border-4 ${isCompleted ? 'bg-yellow-400 border-yellow-200 text-yellow-900' : isCurrent ? 'bg-blue-500 border-white text-white animate-pulse ring-4 ring-blue-300/50' : 'bg-gray-600 border-gray-500 text-gray-400'}`}>
                           {isCompleted ? <Check size={28} strokeWidth={3} /> : !isUnlocked ? <Lock size={20} /> : <span className="text-xl md:text-2xl font-bold">{level.id}</span>}
                         </div>
                         <div className={`absolute top-full mt-2 w-32 left-1/2 -translate-x-1/2 text-center transition-opacity ${isUnlocked ? 'opacity-100' : 'opacity-0'}`}>
-                          <span className={`text-xs md:text-sm font-bold px-2 py-1 rounded shadow-md border ${isCurrent ? 'bg-blue-600 text-white border-blue-300' : 'bg-white text-gray-800 border-gray-300'}`}>{level.title}</span>
+                          <div className={`text-xs md:text-sm font-bold px-2 py-1 rounded shadow-md border ${isCurrent ? 'bg-blue-600 text-white border-blue-300' : 'bg-white text-gray-800 border-gray-300'}`}>
+                              <div className="whitespace-nowrap">{titleParts[0]}</div>
+                              <div className="whitespace-nowrap">{titleParts[1]}</div>
+                          </div>
                         </div>
                       </button>
                     );
